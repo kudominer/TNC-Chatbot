@@ -1,4 +1,7 @@
 import os
+import time
+import threading
+import urllib.request
 from threading import Thread
 
 from flask import Flask
@@ -11,6 +14,7 @@ from .config import BOT_SESSION_ID
 app = Flask("")
 bot_instance = None
 
+
 @app.route("/")
 def home():
     try:
@@ -22,9 +26,14 @@ def home():
             return content.replace("{{ session_id }}", str(BOT_SESSION_ID))
     except Exception as e:
         print(f"❌ Lỗi load web template: {e}")
-    
+
     bot_name = os.getenv("BOT_NAME", "TNT")
-    return f"🛡️ {bot_name} Manager v40 [Siphoned + Massing + GuildCheck] Live! ID: {BOT_SESSION_ID}"
+    return f"🛡️ {bot_name} Chatbot v1.0 [AI Chat] Live! ID: {BOT_SESSION_ID}"
+
+
+@app.route("/health")
+def health():
+    return "ok", 200
 
 
 def _run():
@@ -43,7 +52,32 @@ def webhook_reload():
     return {"status": "error", "message": "Bot instance not found"}, 500
 
 
+# ==============================================================================
+# SELF-PING — giữ Render free tier không sleep (mỗi 4 phút)
+# ==============================================================================
+def _self_ping():
+    """Gửi GET request đến chính nó mỗi 4 phút để Render không sleep."""
+    hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME")
+    if not hostname:
+        return  # Chạy local thì không cần ping
+    url = f"https://{hostname}/health"
+    print(f"🔄 Self-ping enabled: {url} mỗi 4 phút")
+    while True:
+        time.sleep(240)  # 4 phút
+        try:
+            req = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                print(f"🏓 Self-ping OK ({resp.status})")
+        except Exception as e:
+            print(f"⚠️ Self-ping failed: {e}")
+
+
 def keep_alive(bot=None):
     global bot_instance
     bot_instance = bot
+    # QUAN TRỌNG: Flask thread KHÔNG được daemon=True
+    # Trên Render, nếu bot.run() crash, daemon thread sẽ bị kill theo
+    # → Flask die → process exit → bot offline vĩnh viễn
     Thread(target=_run).start()
+    # Self-ping thread IS daemon (chỉ cần giữ awake, không cần giữ process)
+    threading.Thread(target=_self_ping, daemon=True).start()
