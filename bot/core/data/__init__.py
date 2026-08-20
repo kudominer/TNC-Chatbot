@@ -1,0 +1,1 @@
+"""core.data — Module truy cập dữ liệu đọc chậm (blob Supabase) cho các cog."""

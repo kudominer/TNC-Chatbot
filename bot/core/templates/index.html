@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TNC Guild Manager - Albion Online Discord Bot</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Cinzel:wght@600;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg-deep: #0a0a0f;
+            --bg-dark: #0e0e16;
+            --bg-card: rgba(255,255,255,0.03);
+            --gold: #f1c40f;
+            --gold-dim: rgba(241,196,15,0.25);
+            --crimson: #e74c3c;
+            --crimson-dim: rgba(231,76,60,0.25);
+            --text: #f4f4f5;
+            --text-muted: #8a8a96;
+            --font-display: 'Cinzel', serif;
+            --font-body: 'Outfit', sans-serif;
+        }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            background: var(--bg-deep);
+            color: var(--text);
+            font-family: var(--font-body);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* ───────── PARTICLES ───────── */
+        #particles {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            overflow: hidden;
+        }
+        .particle {
+            position: absolute;
+            width: var(--size);
+            height: var(--size);
+            background: var(--color);
+            border-radius: 50%;
+            opacity: 0;
+            animation: float-particle var(--duration) ease-in-out var(--delay) infinite;
+        }
+        @keyframes float-particle {
+            0%   { transform: translateY(100vh) scale(0); opacity: 0; }
+            20%  { opacity: var(--max-opacity); }
+            80%  { opacity: var(--max-opacity); }
+            100% { transform: translateY(-10vh) scale(1); opacity: 0; }
+        }
+
+        /* ───────── HERO ───────── */
+        .hero {
+            position: relative;
+            z-index: 1;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 2rem 1.5rem;
+            background:
+                radial-gradient(ellipse 80% 60% at 50% 30%, rgba(231,76,60,0.08) 0%, transparent 70%),
+                radial-gradient(ellipse 60% 50% at 80% 80%, rgba(241,196,15,0.05) 0%, transparent 60%),
+                radial-gradient(ellipse 50% 40% at 20% 80%, rgba(231,76,60,0.04) 0%, transparent 50%);
+        }
+
+        .hero-glow {
+            position: absolute;
+            width: 400px;
+            height: 400px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(241,196,15,0.06) 0%, transparent 70%);
+            top: 10%;
+            left: 50%;
+            transform: translateX(-50%);
+            filter: blur(60px);
+            animation: glow-pulse 4s ease-in-out infinite;
+        }
+        @keyframes glow-pulse {
+            0%, 100% { opacity: 0.6; transform: translateX(-50%) scale(1); }
+            50%      { opacity: 1;   transform: translateX(-50%) scale(1.15); }
+        }
+
+        .shield {
+            font-size: 5rem;
+            background: linear-gradient(135deg, var(--gold), var(--crimson));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 30px rgba(241,196,15,0.3));
+            animation: shield-float 5s ease-in-out infinite, shield-rotate 10s linear infinite;
+            margin-bottom: 0.5rem;
+            position: relative;
+        }
+        @keyframes shield-float {
+            0%, 100% { transform: translateY(0); }
+            50%      { transform: translateY(-12px); }
+        }
+        @keyframes shield-rotate {
+            0%   { transform: rotateY(0deg); }
+            100% { transform: rotateY(360deg); }
+        }
+
+        .hero h1 {
+            font-family: var(--font-display);
+            font-size: clamp(2.2rem, 6vw, 4.2rem);
+            font-weight: 900;
+            letter-spacing: 4px;
+            background: linear-gradient(135deg, #fff 0%, var(--gold) 40%, #fff 70%, var(--gold) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 30px rgba(241,196,15,0.25));
+            margin-bottom: 1rem;
+            line-height: 1.2;
+        }
+
+        .hero-sub {
+            font-size: clamp(1rem, 2vw, 1.25rem);
+            color: var(--text-muted);
+            font-weight: 300;
+            max-width: 580px;
+            margin: 0 auto 2rem;
+            letter-spacing: 0.3px;
+        }
+
+        .hero-actions {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            margin-bottom: 2.5rem;
+        }
+
+        .btn-primary {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.9rem 2.2rem;
+            border-radius: 50px;
+            font-family: var(--font-body);
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: #0a0a0f;
+            background: linear-gradient(135deg, var(--gold), #f39c12);
+            border: none;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 25px rgba(241,196,15,0.25);
+        }
+        .btn-primary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 35px rgba(241,196,15,0.4);
+        }
+        .btn-primary i { font-size: 1.1rem; }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.55rem 1.3rem;
+            border-radius: 50px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #2ecc71;
+            background: rgba(46,204,113,0.08);
+            border: 1px solid rgba(46,204,113,0.25);
+            backdrop-filter: blur(8px);
+        }
+        .status-dot {
+            width: 9px; height: 9px;
+            border-radius: 50%;
+            background: #2ecc71;
+            box-shadow: 0 0 12px #2ecc71;
+            animation: dot-pulse 1.8s infinite;
+        }
+        @keyframes dot-pulse {
+            0%, 100% { transform: scale(0.9); opacity: 0.7; box-shadow: 0 0 0 0 rgba(46,204,113,0.6); }
+            50%      { transform: scale(1.1); opacity: 1;   box-shadow: 0 0 0 8px rgba(46,204,113,0); }
+        }
+        .session-id {
+            margin-left: 6px;
+            padding-left: 6px;
+            border-left: 1px solid rgba(255,255,255,0.15);
+            font-family: monospace;
+            color: var(--text-muted);
+        }
+
+        .scroll-indicator {
+            position: absolute;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.3rem;
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            animation: scroll-bounce 2s ease-in-out infinite;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        .scroll-indicator i {
+            font-size: 1.2rem;
+        }
+        @keyframes scroll-bounce {
+            0%, 100% { transform: translateX(-50%) translateY(0); }
+            50%      { transform: translateX(-50%) translateY(6px); }
+        }
+
+        /* ───────── SECTIONS ───────── */
+        .section {
+            position: relative;
+            z-index: 1;
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 5rem 1.5rem;
+        }
+
+        .section-label {
+            font-family: var(--font-display);
+            font-size: 0.75rem;
+            letter-spacing: 4px;
+            text-transform: uppercase;
+            color: var(--gold);
+            margin-bottom: 0.25rem;
+        }
+
+        .section-title {
+            font-family: var(--font-display);
+            font-size: clamp(1.6rem, 3vw, 2.2rem);
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 1rem;
+            letter-spacing: 1px;
+        }
+
+        .section-desc {
+            color: var(--text-muted);
+            max-width: 600px;
+            font-size: 1rem;
+            margin-bottom: 3rem;
+        }
+
+        .section-title-center {
+            text-align: center;
+        }
+        .section-desc-center {
+            margin-left: auto;
+            margin-right: auto;
+            text-align: center;
+        }
+
+        /* ───────── ABOUT ───────── */
+        .about-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 3rem;
+            align-items: center;
+        }
+        .about-quote {
+            font-size: 1.15rem;
+            font-weight: 300;
+            line-height: 1.7;
+            color: var(--text-muted);
+            border-left: 3px solid var(--gold);
+            padding-left: 1.5rem;
+            font-style: italic;
+        }
+        .about-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+        .stat-item {
+            background: var(--bg-card);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 14px;
+            padding: 1.5rem;
+            text-align: center;
+            backdrop-filter: blur(8px);
+            transition: border-color 0.3s;
+        }
+        .stat-item:hover { border-color: rgba(241,196,15,0.2); }
+        .stat-number {
+            font-family: var(--font-display);
+            font-size: 2rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--gold), var(--crimson));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+        }
+
+        /* ───────── FEATURES GRID ───────── */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.25rem;
+        }
+
+        .feature-card {
+            background: var(--bg-card);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 18px;
+            padding: 2rem 1.75rem;
+            backdrop-filter: blur(12px);
+            transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+            position: relative;
+            overflow: hidden;
+        }
+        .feature-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--accent, var(--gold)), transparent);
+            opacity: 0.3;
+            transition: opacity 0.3s;
+        }
+        .feature-card:hover {
+            transform: translateY(-6px);
+            border-color: var(--accent);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.4), 0 0 30px color-mix(in srgb, var(--accent) 10%, transparent);
+            background: rgba(255,255,255,0.05);
+        }
+        .feature-card:hover::before { opacity: 1; }
+
+        .feature-icon {
+            width: 50px; height: 50px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            margin-bottom: 1.2rem;
+            background: color-mix(in srgb, var(--accent, var(--gold)) 12%, transparent);
+            border: 1px solid color-mix(in srgb, var(--accent, var(--gold)) 20%, transparent);
+            transition: all 0.3s;
+        }
+        .feature-card:hover .feature-icon {
+            background: var(--accent, var(--gold));
+            color: #0a0a0f;
+            box-shadow: 0 0 20px color-mix(in srgb, var(--accent, var(--gold)) 40%, transparent);
+        }
+        .feature-icon i { transition: none; }
+
+        .feature-card h3 {
+            font-size: 1.15rem;
+            font-weight: 700;
+            margin-bottom: 0.6rem;
+            letter-spacing: 0.3px;
+        }
+        .feature-card p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            line-height: 1.65;
+            margin-bottom: 1rem;
+            flex-grow: 1;
+        }
+        .feature-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+        }
+        .tag {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.07);
+            padding: 0.2rem 0.55rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        /* ───────── COMMANDS TABLE ───────── */
+        .commands-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0 0.4rem;
+        }
+        .commands-table tr {
+            background: var(--bg-card);
+            border-radius: 12px;
+            display: table-row;
+            transition: background 0.2s;
+        }
+        .commands-table td {
+            padding: 1rem 1.25rem;
+            font-size: 0.9rem;
+            border: 1px solid rgba(255,255,255,0.04);
+        }
+        .commands-table td:first-child {
+            border-radius: 12px 0 0 12px;
+            font-family: monospace;
+            font-weight: 600;
+            color: var(--gold);
+            white-space: nowrap;
+            width: 180px;
+        }
+        .commands-table td:last-child {
+            border-radius: 0 12px 12px 0;
+            color: var(--text-muted);
+        }
+        .commands-table tr:hover {
+            background: rgba(255,255,255,0.06);
+        }
+        .cmd-badge {
+            display: inline-block;
+            font-size: 0.65rem;
+            padding: 0.15rem 0.45rem;
+            border-radius: 4px;
+            background: rgba(241,196,15,0.1);
+            color: var(--gold);
+            border: 1px solid rgba(241,196,15,0.15);
+            margin-left: 0.5rem;
+            vertical-align: middle;
+            font-family: var(--font-body);
+            font-weight: 500;
+        }
+
+        /* ───────── FOOTER ───────── */
+        footer {
+            position: relative;
+            z-index: 1;
+            text-align: center;
+            padding: 2.5rem 1.5rem;
+            border-top: 1px solid rgba(255,255,255,0.04);
+            background: rgba(0,0,0,0.3);
+        }
+        .footer-links {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .footer-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.9rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            transition: color 0.2s;
+        }
+        .footer-links a:hover { color: var(--gold); }
+        .footer-copy {
+            font-size: 0.8rem;
+            color: rgba(255,255,255,0.2);
+        }
+
+        /* ───────── RESPONSIVE ───────── */
+        @media (max-width: 900px) {
+            .features-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .about-grid {
+                grid-template-columns: 1fr;
+                gap: 2rem;
+            }
+        }
+        @media (max-width: 600px) {
+            .features-grid {
+                grid-template-columns: 1fr;
+            }
+            .about-stats {
+                grid-template-columns: 1fr 1fr;
+                gap: 0.75rem;
+            }
+            .hero h1 { letter-spacing: 2px; }
+            .hero-actions { flex-direction: column; }
+            .commands-table td {
+                display: block;
+                border: none;
+                padding: 0.5rem 1rem;
+            }
+            .commands-table td:first-child {
+                border-radius: 12px 12px 0 0;
+                padding-top: 1rem;
+            }
+            .commands-table td:last-child {
+                border-radius: 0 0 12px 12px;
+                padding-bottom: 1rem;
+            }
+            .commands-table tr {
+                display: block;
+                border: 1px solid rgba(255,255,255,0.04);
+                border-radius: 12px;
+            }
+            .cmd-badge { margin-left: 0.3rem; }
+        }
+
+        /* ───────── REVEAL ANIMATIONS ───────── */
+        .reveal {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: opacity 0.7s ease, transform 0.7s ease;
+        }
+        .reveal.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Particles -->
+    <div id="particles"></div>
+
+    <!-- Hero -->
+    <section class="hero">
+        <div class="hero-glow"></div>
+
+        <div class="shield">
+            <i class="fa-solid fa-shield-halved"></i>
+        </div>
+
+        <h1>TNC GUILD MANAGER</h1>
+        <p class="hero-sub">
+            Discord Bot tối ưu hóa vận hành, quản lý điểm hoạt động và ngân quỹ<br>
+            cho Guild <strong style="color:var(--gold)">TNC</strong> trong thế giới <strong style="color:var(--crimson)">Albion Online</strong>.
+        </p>
+
+        <div class="hero-actions">
+            <a href="https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=8&scope=bot" class="btn-primary" target="_blank">
+                <i class="fa-brands fa-discord"></i> Mời Bot Vào Server
+            </a>
+            <div class="status-badge">
+                <span class="status-dot"></span>
+                <span>BOT ONLINE</span>
+                <span class="session-id">Session #{{ session_id }}</span>
+            </div>
+        </div>
+
+        <div class="scroll-indicator">
+            <span>Khám phá</span>
+            <i class="fa-solid fa-chevron-down"></i>
+        </div>
+    </section>
+
+    <!-- About -->
+    <section class="section" id="about">
+        <div class="about-grid">
+            <div class="reveal">
+                <div class="section-label">Về TNC</div>
+                <h2 class="section-title">Guild Việt trên<br>Albion Online</h2>
+                <p class="about-quote">
+                    "TNC là một cộng đồng game thủ Albion Online người Việt, hoạt động mạnh trong cả
+                    PVP và PVE. Bot này ra đời để giúp anh em trong guild quản lý điểm siphoned, tổ chức
+                    massing, kiểm tra thành viên và nhiều hơn thế."
+                </p>
+            </div>
+            <div class="about-stats reveal">
+                <div class="stat-item">
+                    <div class="stat-number">5+</div>
+                    <div class="stat-label">Hệ Thống Tính Năng</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number">20+</div>
+                    <div class="stat-label">Slash Commands</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number">24/7</div>
+                    <div class="stat-label">Online Uptime</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number">JSON</div>
+                    <div class="stat-label">Auto Backup</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features -->
+    <section class="section" id="features">
+        <div class="section-label section-title-center">Hệ Thống Tính Năng</div>
+        <h2 class="section-title section-title-center">Vận Hành Guild Tự Động</h2>
+        <p class="section-desc section-desc-center">
+            6 hệ thống tích hợp — từ quản lý điểm số, tổ chức party, kiểm tra thành viên đến voice chat.
+        </p>
+
+        <div class="features-grid">
+            <!-- 1. SP -->
+            <div class="feature-card reveal" style="--accent: #3498db">
+                <div class="feature-icon"><i class="fa-solid fa-gem"></i></div>
+                <h3>Siphoned Points</h3>
+                <p>Parse file log `.txt` hoạt động bang hội, cộng dồn điểm siphoned theo người chơi, bảng xếp hạng phân trang.</p>
+                <div class="feature-tags">
+                    <span class="tag">Log Parser</span>
+                    <span class="tag">Leaderboard</span>
+                    <span class="tag">Phân Trang</span>
+                </div>
+            </div>
+
+            <!-- 2. Massing -->
+            <div class="feature-card reveal" style="--accent: #e74c3c">
+                <div class="feature-icon"><i class="fa-solid fa-users-rays"></i></div>
+                <h3>Massing PVP/PVE</h3>
+                <p>Khởi tạo party theo role & weapon, UI nút bấm join/kick/move/fill, lưu template, tự khôi phục sau restart.</p>
+                <div class="feature-tags">
+                    <span class="tag">Interactive UI</span>
+                    <span class="tag">Templates</span>
+                    <span class="tag">Auto Restore</span>
+                </div>
+            </div>
+
+            <!-- 3. GuildCheck -->
+            <div class="feature-card reveal" style="--accent: #2ecc71">
+                <div class="feature-icon"><i class="fa-solid fa-user-check"></i></div>
+                <h3>GuildCheck</h3>
+                <p>Đăng ký IGN, kiểm tra qua Albion API xem còn trong guild không, tự xóa role Discord nếu đã rời.</p>
+                <div class="feature-tags">
+                    <span class="tag">Albion API</span>
+                    <span class="tag">Auto Sync</span>
+                    <span class="tag">Role Manager</span>
+                </div>
+            </div>
+
+            <!-- 4. Alo TTS -->
+            <div class="feature-card reveal" style="--accent: #9b59b6">
+                <div class="feature-icon"><i class="fa-solid fa-volume-high"></i></div>
+                <h3>Alo Voice (TTS)</h3>
+                <p>Đọc chat thành giọng nói qua gTTS vào voice channel, auto reconnect khi mất kết nối.</p>
+                <div class="feature-tags">
+                    <span class="tag">gTTS</span>
+                    <span class="tag">Voice Channel</span>
+                    <span class="tag">Auto Rejoin</span>
+                </div>
+            </div>
+
+            <!-- 5. Core-Bank -->
+            <div class="feature-card reveal" style="--accent: #f1c40f">
+                <div class="feature-icon"><i class="fa-solid fa-coins"></i></div>
+                <h3>Core &amp; Bank</h3>
+                <p>Auto react lên ảnh core nộp, quy đổi ra silver qua UnbelievaBoat, audit log đầy đủ.</p>
+                <div class="feature-tags">
+                    <span class="tag">Auto React</span>
+                    <span class="tag">UnbelievaBoat</span>
+                    <span class="tag">Audit Log</span>
+                </div>
+            </div>
+
+            <!-- 6. Backup -->
+            <div class="feature-card reveal" style="--accent: #95a5a6">
+                <div class="feature-icon"><i class="fa-solid fa-cloud-arrow-up"></i></div>
+                <h3>Sao Lưu Dữ Liệu</h3>
+                <p>Cơ chế safe-write .tmp/.bak chống hỏng JSON, tự động git push dữ liệu lên GitHub định kỳ.</p>
+                <div class="feature-tags">
+                    <span class="tag">Safe-Write</span>
+                    <span class="tag">GitHub Sync</span>
+                    <span class="tag">JSON DB</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Commands -->
+    <section class="section" id="commands">
+        <div class="section-label section-title-center">Slash Commands</div>
+        <h2 class="section-title section-title-center">Mọi Thứ Trong Tầm Tay</h2>
+        <p class="section-desc section-desc-center">
+            Điều khiển bot hoàn toàn qua lệnh slash — nhanh gọn, trực quan.
+        </p>
+
+        <div class="reveal">
+            <table class="commands-table">
+                <tr>
+                    <td>/spupdate <span class="cmd-badge">SP</span></td>
+                    <td>Cập nhật điểm Siphoned từ file log</td>
+                </tr>
+                <tr>
+                    <td>/spcheck <span class="cmd-badge">SP</span></td>
+                    <td>Kiểm tra điểm SP của người chơi</td>
+                </tr>
+                <tr>
+                    <td>/massing <span class="cmd-badge">Mass</span></td>
+                    <td>Tạo party PVP/PVE mới</td>
+                </tr>
+                <tr>
+                    <td>/guildcheck <span class="cmd-badge">GC</span></td>
+                    <td>Kiểm tra toàn bộ thành viên trong guild</td>
+                </tr>
+                <tr>
+                    <td>/alo <span class="cmd-badge">TTS</span></td>
+                    <td>Gửi tin nhắn TTS vào voice channel</td>
+                </tr>
+                <tr>
+                    <td>/coreadd <span class="cmd-badge">Bank</span></td>
+                    <td>Nộp core/bạc vào ngân quỹ</td>
+                </tr>
+                <tr>
+                    <td>/registertnc <span class="cmd-badge">GC</span></td>
+                    <td>Đăng ký IGN Albion Online</td>
+                </tr>
+            </table>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-links">
+            <a href="https://github.com/namdzaixd-cpu/Bot_Albion_TNC" target="_blank">
+                <i class="fa-brands fa-github"></i> GitHub
+            </a>
+            <a href="https://albiononline.com" target="_blank">
+                <i class="fa-solid fa-gamepad"></i> Albion Online
+            </a>
+            <a href="https://discord.gg/PhMqCskBJ" target="_blank">
+                <i class="fa-brands fa-discord"></i> Discord
+            </a>
+        </div>
+        <p class="footer-copy">TNC Guild &copy; 2026. Thiết kế vận hành bởi Albion TNC Management.</p>
+    </footer>
+
+    <script>
+        // ─── PARTICLES ───
+        (function() {
+            const container = document.getElementById('particles');
+            const colors = [
+                'rgba(241,196,15,0.4)',
+                'rgba(231,76,60,0.3)',
+                'rgba(255,255,255,0.15)',
+                'rgba(52,152,219,0.2)',
+            ];
+            for (let i = 0; i < 40; i++) {
+                const el = document.createElement('div');
+                el.className = 'particle';
+                const size = 2 + Math.random() * 5;
+                el.style.setProperty('--size', size + 'px');
+                el.style.setProperty('--color', colors[Math.floor(Math.random() * colors.length)]);
+                el.style.setProperty('--duration', 8 + Math.random() * 14 + 's');
+                el.style.setProperty('--delay', Math.random() * 15 + 's');
+                el.style.setProperty('--max-opacity', (0.4 + Math.random() * 0.6).toFixed(2));
+                el.style.left = Math.random() * 100 + '%';
+                container.appendChild(el);
+            }
+        })();
+
+        // ─── REVEAL ON SCROLL ───
+        (function() {
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('visible');
+                    }
+                });
+            }, { threshold: 0.15 });
+
+            document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+        })();
+    </script>
+</body>
+</html>
