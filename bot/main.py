@@ -1,6 +1,11 @@
 import os
+import sys
 import signal
 import asyncio
+
+# python -m bot.main chạy từ repo root → cần thêm bot/ vào sys.path
+# để import core.* và cogs.* hoạt động
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import discord
 from discord.ext import commands
