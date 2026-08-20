@@ -73,7 +73,20 @@ class ChatAI(commands.Cog):
         self._frozen_until = {}  # step_index (trong FAILOVER_CHAIN) -> timestamp hết đóng băng
         self._summary_pending = {}  # key(channel|since_hours) -> ts debounce — có TTL + cap (chống tăng vô hạn)
         self._scan_ocr_count = 0  # đếm ảnh OCR trong 1 lần quét thư viện (chống bung RAM)
+        self._http_session = None  # shared aiohttp session (tạo khi bot ready)
         self._reload_config()
+
+    async def _get_http_session(self):
+        """Trả về shared aiohttp session, tạo mới nếu chưa có hoặc đã đóng."""
+        if self._http_session is None or self._http_session.closed:
+            timeout = aiohttp.ClientTimeout(total=30)
+            self._http_session = aiohttp.ClientSession(timeout=timeout)
+        return self._http_session
+
+    async def cog_unload(self):
+        """Đóng shared session khi cog bị unload."""
+        if self._http_session and not self._http_session.closed:
+            await self._http_session.close()
         
     def get_buffer(self, channel_id_str):
         if channel_id_str not in self.message_buffers:
@@ -147,8 +160,9 @@ class ChatAI(commands.Cog):
             headers = {
                 "Authorization": f"Bearer {self.api_key}"
             }
-            async with aiohttp.ClientSession() as session:
-                async with session.get("https://openrouter.ai/api/v1/auth/key", headers=headers, timeout=10) as resp:
+            session = await self._get_http_session()
+            async with session.get("https://openrouter.ai/api/v1/auth/key", headers=headers,
+                                    timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     if resp.status == 200:
                         data = await resp.json()
                         info = data.get("data", {})
@@ -241,11 +255,11 @@ class ChatAI(commands.Cog):
 
     async def _image_to_base64(self, url: str) -> str:
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as resp:
-                    if resp.status == 200:
-                        data = await resp.read()
-                        return base64.b64encode(data).decode('utf-8')
+            session = await self._get_http_session()
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                if resp.status == 200:
+                    data = await resp.read()
+                    return base64.b64encode(data).decode('utf-8')
         except Exception as e:
             print(f"Lỗi tải ảnh: {e}")
         return ""
@@ -265,12 +279,13 @@ class ChatAI(commands.Cog):
                     ]
                 }]
             }
-            headers = {"x-goog-api-key": GEMINI_API_KEY}  # key AQ (auth key 2026): qua header, KHÔNG ?key=
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, headers=headers) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        return data["candidates"][0]["content"]["parts"][0]["text"]
+            headers = {"x-goog-api-key": GEMINI_API_KEY}
+            session = await self._get_http_session()
+            async with session.post(url, json=payload, headers=headers,
+                                    timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return data["candidates"][0]["content"]["parts"][0]["text"]
         except Exception as e:
             print(f"Lỗi OCR ảnh: {e}")
         return ""
@@ -484,8 +499,8 @@ class ChatAI(commands.Cog):
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
             }
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers, timeout=10) as resp:
+            session = await self._get_http_session()
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     if resp.status != 200:
                         return f"[Không thể cào dữ liệu từ link này. Mã lỗi HTTP: {resp.status}]"
                     
@@ -514,13 +529,14 @@ class ChatAI(commands.Cog):
             "systemInstruction": {"parts": [{"text": system_instruction}]},
             "contents": [{"parts": gemini_parts}],
         }
-        headers = {"x-goog-api-key": GEMINI_API_KEY}  # key AQ (auth key 2026): qua header, KHÔNG ?key=
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
-            async with session.post(url, json=payload, headers=headers) as resp:
-                data = await resp.json()
-                if resp.status != 200:
-                    raise RuntimeError(data.get("error", {}).get("message", f"HTTP {resp.status}"))
-                return data["candidates"][0]["content"]["parts"][0]["text"]
+        headers = {"x-goog-api-key": GEMINI_API_KEY}
+        session = await self._get_http_session()
+        req_timeout = aiohttp.ClientTimeout(total=timeout)
+        async with session.post(url, json=payload, headers=headers, timeout=req_timeout) as resp:
+            data = await resp.json()
+            if resp.status != 200:
+                raise RuntimeError(data.get("error", {}).get("message", f"HTTP {resp.status}"))
+            return data["candidates"][0]["content"]["parts"][0]["text"]
 
     async def _call_openrouter(self, model: str, system_instruction: str, prompt: str, or_content: list, has_images: bool, timeout: int):
         """Trả về text trả lời, None nếu thiếu API key, raise Exception nếu gọi lỗi."""
@@ -536,12 +552,13 @@ class ChatAI(commands.Cog):
             ],
         }
         headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}"}
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
-            async with session.post(OPENROUTER_URL, json=payload, headers=headers) as resp:
-                data = await resp.json()
-                if resp.status != 200:
-                    raise RuntimeError(data.get("error", {}).get("message", f"HTTP {resp.status}"))
-                return data["choices"][0]["message"]["content"]
+        session = await self._get_http_session()
+        req_timeout = aiohttp.ClientTimeout(total=timeout)
+        async with session.post(OPENROUTER_URL, json=payload, headers=headers, timeout=req_timeout) as resp:
+            data = await resp.json()
+            if resp.status != 200:
+                raise RuntimeError(data.get("error", {}).get("message", f"HTTP {resp.status}"))
+            return data["choices"][0]["message"]["content"]
 
     async def _call_ollama(self, model: str, system_instruction: str, prompt: str, timeout: int):
         """Trả về text trả lời, raise Exception nếu gọi lỗi (Ollama không bắt buộc API key)."""
@@ -556,12 +573,13 @@ class ChatAI(commands.Cog):
         headers = {"Content-Type": "application/json"}
         if OLLAMA_API_KEY:
             headers["Authorization"] = f"Bearer {OLLAMA_API_KEY}"
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
-            async with session.post(OLLAMA_URL, json=payload, headers=headers) as resp:
-                data = await resp.json()
-                if resp.status != 200:
-                    raise RuntimeError(data.get("error", f"HTTP {resp.status}"))
-                return data["message"]["content"]
+        session = await self._get_http_session()
+        req_timeout = aiohttp.ClientTimeout(total=timeout)
+        async with session.post(OLLAMA_URL, json=payload, headers=headers, timeout=req_timeout) as resp:
+            data = await resp.json()
+            if resp.status != 200:
+                raise RuntimeError(data.get("error", f"HTTP {resp.status}"))
+            return data["message"]["content"]
 
     # ── TÓM TẮT KÊNH CHỦ ĐỘNG ────────────────────────────────────────────────
 
@@ -860,6 +878,8 @@ class ChatAI(commands.Cog):
                 hist.reverse()
                 for item in hist:
                     self.message_buffers[channel_id_str].append(item)
+            except asyncio.TimeoutError:
+                print(f"⚠️ Timeout pre-fetching history cho channel {channel_id_str} — bỏ qua, dùng buffer rỗng")
             except Exception as e:
                 print(f"Error pre-fetching history: {e}")
 

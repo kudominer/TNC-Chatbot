@@ -69,14 +69,18 @@ def get_client() -> Optional[Client]:
 
 def _with_retry(fn: Callable[[], T], *, retries: int = DEFAULT_RETRIES,
                backoff: float = DEFAULT_BACKOFF) -> T:
-    """Chạy fn, tự retry nếu raise. Raise DBError sau khi hết retries."""
+    """Chạy fn, tự retry nếu raise. Raise DBError sau khi hết retries.
+
+    Lưu ý: Dùng time.sleep() ngắn (0.3s max) để không block event loop quá lâu.
+    Nếu cần retry dài hơn, nên dùng asyncio trong caller.
+    """
     last_exc: Optional[Exception] = None
     for attempt in range(1, retries + 1):
         try:
             return fn()
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
-            wait = backoff * (2 ** (attempt - 1))
+            wait = min(backoff * (2 ** (attempt - 1)), 0.3)  # cap 0.3s để không block event loop
             logger.warning(
                 "DB call thất bại (lần %d/%d): %s — retry sau %.2fs",
                 attempt, retries, exc, wait,
