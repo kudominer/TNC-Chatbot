@@ -2,6 +2,7 @@ import os
 import sys
 import signal
 import asyncio
+import traceback
 
 # python -m bot.main chạy từ repo root → cần thêm bot/ vào sys.path
 # để import core.* và cogs.* hoạt động
@@ -33,16 +34,22 @@ class TNCChatbot(commands.Bot):
         super().__init__(command_prefix=["!", "."], intents=intents, help_command=None)
 
     async def setup_hook(self):
+        # SystemLogger MUST start trước khi load cogs
+        # để bắt được lỗi import/cog load
+        SystemLogger.start(self)
+
         for extension in EXTENSIONS:
-            await self.load_extension(extension)
+            try:
+                await self.load_extension(extension)
+            except Exception as e:
+                print(f"❌ Failed to load {extension}: {e}")
+                traceback.print_exc()
 
         guild = discord.Object(id=GUILD_ID)
         self.tree.copy_global_to(guild=guild)
         synced = await self.tree.sync(guild=guild)
         print(f"✅ Đã sync {len(synced)} slash commands vào guild!")
 
-        # Bật ghi log hệ thống
-        SystemLogger.start(self)
         # Bật heartbeat đập tim lên Supabase
         start_heartbeat(self)
 

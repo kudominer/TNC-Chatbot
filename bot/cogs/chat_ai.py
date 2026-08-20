@@ -22,7 +22,6 @@ from discord.ext import commands
 
 from core.config import DATA_DIR, STORAGE_DIR, GEMINI_API_KEY, OPENROUTER_API_KEY, OLLAMA_API_KEY
 from core.permissions import is_officer
-from core.permissions import is_officer
 from core.storage import load_json, save_json
 from core.database import execute
 from core.data.albion_item import format_item_compact, format_item_full, search_items
