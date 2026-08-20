@@ -4,17 +4,32 @@ import signal
 import asyncio
 import traceback
 
+print(f"🚀 [STARTUP] bot/main.py loaded. Python {sys.version}")
+
 # python -m bot.main chạy từ repo root → cần thêm bot/ vào sys.path
 # để import core.* và cogs.* hoạt động
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+print(f"🚀 [STARTUP] sys.path set. dir={os.path.dirname(os.path.abspath(__file__))}")
 
-import discord
-from discord.ext import commands
+try:
+    import discord
+    from discord.ext import commands
+    print(f"🚀 [STARTUP] discord.py imported OK")
+except Exception as e:
+    print(f"❌ [STARTUP] Failed to import discord: {e}")
+    traceback.print_exc()
+    sys.exit(1)
 
-from core.config import BOT_SESSION_ID, GUILD_ID, TOKEN
-from core.webserver import keep_alive
-from core.system_logger import SystemLogger
-from core.heartbeat import start as start_heartbeat
+try:
+    from core.config import BOT_SESSION_ID, GUILD_ID, TOKEN
+    from core.webserver import keep_alive
+    from core.system_logger import SystemLogger
+    from core.heartbeat import start as start_heartbeat
+    print(f"🚀 [STARTUP] core.* imported OK")
+except Exception as e:
+    print(f"❌ [STARTUP] Failed to import core: {e}")
+    traceback.print_exc()
+    sys.exit(1)
 
 # ==============================================================================
 # TNC CHATBOT — AI Chat Only
