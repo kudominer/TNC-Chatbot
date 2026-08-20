@@ -864,24 +864,38 @@ class ChatAI(commands.Cog):
         channel_id_str = str(message.channel.id)
         if channel_id_str not in self.message_buffers:
             size = self.ai_config.get("channel_buffers", {}).get(channel_id_str, 20)
+            # Giới hạn max 15 để tránh Discord rate limit (429)
+            size = min(size, 15)
             self.message_buffers[channel_id_str] = collections.deque(maxlen=size)
-            try:
-                hist = []
-                async for m in message.channel.history(limit=size, before=message.created_at):
-                    if m.author.bot: continue
-                    r = [role.name for role in m.author.roles if role.name != '@everyone'] if isinstance(m.author, discord.Member) else []
-                    hist.append({
-                        "author": m.author.display_name,
-                        "roles": ", ".join(r) if r else "Member",
-                        "content": m.content
-                    })
-                hist.reverse()
-                for item in hist:
-                    self.message_buffers[channel_id_str].append(item)
-            except asyncio.TimeoutError:
-                print(f"⚠️ Timeout pre-fetching history cho channel {channel_id_str} — bỏ qua, dùng buffer rỗng")
-            except Exception as e:
-                print(f"Error pre-fetching history: {e}")
+            for retry in range(3):
+                try:
+                    hist = []
+                    async for m in message.channel.history(limit=size, before=message.created_at):
+                        if m.author.bot: continue
+                        r = [role.name for role in m.author.roles if role.name != '@everyone'] if isinstance(m.author, discord.Member) else []
+                        hist.append({
+                            "author": m.author.display_name,
+                            "roles": ", ".join(r) if r else "Member",
+                            "content": m.content
+                        })
+                    hist.reverse()
+                    for item in hist:
+                        self.message_buffers[channel_id_str].append(item)
+                    break  # thành công, thoát retry loop
+                except asyncio.TimeoutError:
+                    print(f"⚠️ Timeout pre-fetching history cho channel {channel_id_str}")
+                    break
+                except discord.errors.HTTPException as e:
+                    if "429" in str(e) and retry < 2:
+                        wait = 2 ** (retry + 1)  # 2s, 4s
+                        print(f"⚠️ Discord rate limit (429) khi fetch history — retry sau {wait}s")
+                        await asyncio.sleep(wait)
+                    else:
+                        print(f"Error pre-fetching history: {e}")
+                        break
+                except Exception as e:
+                    print(f"Error pre-fetching history: {e}")
+                    break
 
         author_roles = []
         if isinstance(message.author, discord.Member):
@@ -1079,27 +1093,37 @@ class ChatAI(commands.Cog):
                         else:
                             msg_count = 0
                             empty_count = 0
-                            try:
-                                async for msg in channel.history(limit=20):
-                                    msg_count += 1
-                                    if not msg.content: 
-                                        empty_count += 1
-                                        continue
-                                    roles_str = "Member"
-                                    if isinstance(msg.author, discord.Member):
-                                        roles = [r.name for r in msg.author.roles if r.name != '@everyone']
-                                        if roles:
-                                            roles_str = ", ".join(roles)
-                                    context_data += f"[{msg.author.display_name} ({roles_str})]: {msg.content}\n"
-                                
-                                if msg_count > 0 and msg_count == empty_count:
-                                    context_data += f"[LỖI HỆ THỐNG: Đọc được {msg_count} tin nhắn nhưng TẤT CẢ đều rỗng.]\n"
-                                elif msg_count == 0:
-                                    context_data += "[Kênh này hoàn toàn không có tin nhắn nào.]\n"
-                            except discord.errors.Forbidden:
-                                context_data += "[LỖI QUYỀN TRUY CẬP: Bot không có quyền 'Read Message History'.]\n"
-                            except Exception as e:
-                                context_data += f"[LỖI KHÔNG XÁC ĐỊNH KHI ĐỌC KÊNH: {e}]\n"
+                            for hist_retry in range(2):
+                                try:
+                                    async for msg in channel.history(limit=15):
+                                        msg_count += 1
+                                        if not msg.content:
+                                            empty_count += 1
+                                            continue
+                                        roles_str = "Member"
+                                        if isinstance(msg.author, discord.Member):
+                                            roles = [r.name for r in msg.author.roles if r.name != '@everyone']
+                                            if roles:
+                                                roles_str = ", ".join(roles)
+                                        context_data += f"[{msg.author.display_name} ({roles_str})]: {msg.content}\n"
+
+                                    if msg_count > 0 and msg_count == empty_count:
+                                        context_data += f"[LỖI HỆ THỐNG: Đọc được {msg_count} tin nhắn nhưng TẤT CẢ đều rỗng.]\n"
+                                    elif msg_count == 0:
+                                        context_data += "[Kênh này hoàn toàn không có tin nhắn nào.]\n"
+                                    break
+                                except discord.errors.HTTPException as e:
+                                    if "429" in str(e) and hist_retry == 0:
+                                        await asyncio.sleep(3)
+                                    else:
+                                        context_data += f"[LỖI KHI ĐỌC KÊNH: {e}]\n"
+                                        break
+                                except discord.errors.Forbidden:
+                                    context_data += "[LỖI QUYỀN TRUY CẬP: Bot không có quyền 'Read Message History'.]\n"
+                                    break
+                                except Exception as e:
+                                    context_data += f"[LỖI KHÔNG XÁC ĐỊNH KHI ĐỌC KÊNH: {e}]\n"
+                                    break
                                 
                         context_data += "--------------------------------------\n\n"
                     else:
