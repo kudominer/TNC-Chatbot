@@ -627,29 +627,38 @@ class ChatAI(commands.Cog):
         # Xác định tên kênh: mention <#id> hoặc text thường
         import re
         ch_id = None
+        named_channel = False  # user có gọi đích danh tên kênh không
         m = re.search(r"<#(\d+)>", content)
         if m:
             ch_id = m.group(1)
+            named_channel = True
         else:
             # Tìm tên kênh dạng text: lấy chuỗi giữa "kênh" và "từ"
             name_m = re.search(r"kênh\s+([^\s@]+)", content_lower)
             ch_name = name_m.group(1).strip() if name_m else None
             if ch_name:
+                named_channel = True
                 ch_name = self._norm_text(ch_name)
                 try:
                     resp, err = execute(lambda c: c.table("discord_channels")
                                        .select("id,name").limit(1000))
+                    if err:
+                        print(f"[summary] Lỗi query discord_channels: {err}")
                     if resp and resp.data:
                         for row in resp.data:
                             if ch_name in self._norm_text(row.get("name", "")):
                                 ch_id = str(row["id"])
                                 break
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"[summary] Exception query discord_channels: {e}")
+                if not ch_id:
+                    print(f"[summary] Không tìm thấy kênh khớp '{ch_name}' "
+                          f"trong discord_channels — sẽ fallback về kênh hiện tại.")
 
         # Fallback: dùng kênh hiện tại nếu không xác định được
         channel_query = ch_id or (str(current_channel.id) if current_channel else None)
-        return {"channel_query": channel_query, "since_hours": since_hours}
+        return {"channel_query": channel_query, "since_hours": since_hours,
+                "named_channel": named_channel}
 
     def _fetch_channel_history(self, channel_query: str, since_hours: int, limit: int = 150) -> str:
         """Truy vấn Supabase chat_history theo channel_id (ưu tiên) hoặc channel_name."""
@@ -670,12 +679,14 @@ class ChatAI(commands.Cog):
             resp, err = execute(q)
             rows = (resp.data if resp and resp.data else []) if not err else []
             if not rows:
-                # Fallback: thử theo channel_name (normalize)
+                # Fallback: thử theo channel_name (normalize).
+                # LƯU Ý: phải select cả channel_name — bản cũ thiếu cột này
+                # nên bộ lọc luôn rỗng, fallback không bao giờ khớp.
                 name_q = self._norm_text(channel_query)
                 resp2, err2 = execute(lambda c: c.table("chat_history")
-                                      .select("author_name,content,created_at")
+                                      .select("author_name,content,created_at,channel_name")
                                       .gte("created_at", since)
-                                      .limit(500))
+                                      .limit(1000))
                 if not err2 and resp2 and resp2.data:
                     rows = [r for r in resp2.data
                             if name_q in self._norm_text(r.get("channel_name", ""))][:limit]
@@ -993,8 +1004,18 @@ class ChatAI(commands.Cog):
                         summary_req["channel_query"], summary_req["since_hours"]
                     )
                     if hist and hist.startswith("("):
-                        # Không có data
-                        summary_context = hist
+                        # Không có data. Nếu user gọi đích danh tên kênh mà kênh đó
+                        # trống → nói rõ thay vì để AI bịa "không có gì".
+                        if summary_req.get("named_channel"):
+                            summary_context = (
+                                f"(Người dùng hỏi tóm tắt một kênh cụ thể nhưng không có "
+                                f"tin nhắn nào được ghi trong {summary_req['since_hours']}h qua "
+                                f"cho kênh đó trong cơ sở dữ liệu. Hãy trả lời ngắn gọn rằng "
+                                f"bạn chưa có dữ liệu kênh này trong khoảng thời gian đó — "
+                                f"KHÔNG bịa nội dung.)"
+                            )
+                        else:
+                            summary_context = hist
                     elif hist:
                         # A1: preprocess giảm ~60% token
                         processed = self._preprocess_history(hist)
