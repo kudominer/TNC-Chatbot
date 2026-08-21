@@ -11,12 +11,18 @@ print(f"🚀 [STARTUP] bot/main.py loaded. Python {sys.version}")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 print(f"🚀 [STARTUP] sys.path set. dir={os.path.dirname(os.path.abspath(__file__))}")
 
+# Boot logger phải lên sóng sớm nhất có thể (chỉ cần os + urllib)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "core"))
+from core.boot_logger import boot_log  # noqa: E402
+
+boot_log(f"Process start — Python {sys.version.split()[0]}, pid={os.getpid()}")
+
 try:
     import discord
     from discord.ext import commands
-    print(f"🚀 [STARTUP] discord.py imported OK")
+    boot_log("discord.py imported OK")
 except Exception as e:
-    print(f"❌ [STARTUP] Failed to import discord: {e}")
+    boot_log(f"Failed to import discord: {e}", "ERROR")
     traceback.print_exc()
     sys.exit(1)
 
@@ -25,9 +31,9 @@ try:
     from core.webserver import keep_alive
     from core.system_logger import SystemLogger
     from core.heartbeat import start as start_heartbeat
-    print(f"🚀 [STARTUP] core.* imported OK")
+    boot_log("core.* imported OK")
 except Exception as e:
-    print(f"❌ [STARTUP] Failed to import core: {e}")
+    boot_log(f"Failed to import core: {e}", "ERROR")
     traceback.print_exc()
     sys.exit(1)
 
@@ -51,6 +57,7 @@ class TNCChatbot(commands.Bot):
         super().__init__(command_prefix=["!", "."], intents=intents, help_command=None)
 
     async def setup_hook(self):
+        boot_log("setup_hook bắt đầu — Discord login THÀNH CÔNG")
         # SystemLogger MUST start trước khi load cogs
         # để bắt được lỗi import/cog load
         SystemLogger.start(self)
@@ -130,6 +137,7 @@ def _gateway_watchdog_thread():
 
 @bot.event
 async def on_ready():
+    boot_log(f"on_ready — {bot.user} SẴN SÀNG, gateway hoạt động")
     print(f"✅ Chatbot đã hoạt động: {bot.user} | ID: {bot.user.id}")
     bot_name = os.getenv("BOT_NAME", "NDZ")
     print(f"✅ {bot_name} Chatbot v1.0 [AI Chat + Wiki + Items + Learning] Online! Session: {BOT_SESSION_ID}")
@@ -142,16 +150,18 @@ async def on_ready():
 
 if __name__ == "__main__":
     keep_alive(bot)
+    boot_log("Đang gọi bot.run() — chờ Discord login...")
     try:
         bot.run(TOKEN)
     except BaseException as e:
         print(f"❌ [FATAL] bot.run() thất bại: {e!r}")
         traceback.print_exc()
+        boot_log(f"bot.run() THẤT BẠI: {e!r}", "ERROR")
         # BẮT BUỘC hard-exit: thread Flask non-daemon sẽ giữ process sống
         # thành zombie (/health vẫn 200) → Render thấy healthy và KHÔNG BAO GIỜ
         # restart dù bot đã chết từ lâu. Exit code != 0 buộc Render restart.
         os._exit(1)
     # bot.run() trả về bình thường (shutdown sạch) cũng phải thoát,
     # tránh trở thành zombie như trên.
-    print("👋 bot.run() đã kết thúc — thoát process để Render restart sạch.")
+    boot_log("bot.run() đã kết thúc sạch — thoát process để Render restart.")
     os._exit(0)
