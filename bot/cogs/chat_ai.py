@@ -185,25 +185,51 @@ class ChatAI(commands.Cog):
         if not guild:
             await interaction.followup.send("❌ Lệnh này chỉ dùng trong server.", ephemeral=True)
             return
-        summary = [f"🔄 Đang nạp lịch sử **tất cả kênh** (giới hạn {limit} tin/kênh)..."]
-        await interaction.followup.send("\n".join(summary), ephemeral=True)
-        total = 0
-        ok = 0
-        for ch in guild.text_channels:
-            perms = ch.permissions_for(guild.me) if guild.me else None
-            if not perms or not perms.read_message_history:
-                continue
-            r = await self._backfill_channel(ch, interaction.user, limit=limit)
-            if r.startswith("✅"):
-                ok += 1
-                # đếm số tin từ chuỗi "Đã nạp N tin nhắn"
+
+        # Hàm gửi kết quả cuối — thử followup, nếu token hết hạn (>15p) thì DM thay thế
+        async def _final(msg: str):
+            try:
+                await interaction.followup.send(msg, ephemeral=True)
+            except discord.errors.NotFound:
                 try:
-                    total += int(r.split("nạp ", 1)[1].split(" tin", 1)[0])
+                    await interaction.user.send(msg)
                 except Exception:
                     pass
-            await asyncio.sleep(1.0)  # throttle giữa các kênh
-        await interaction.followup.send(
-            f"🎉 Nạp xong: {ok} kênh, tổng {total} tin nhắn.", ephemeral=True)
+
+        progress_msg = await interaction.followup.send(
+            f"🔄 Đang nạp lịch sử **tất cả kênh** (giới hạn {limit} tin/kênh)...",
+            ephemeral=True)
+        total = 0
+        ok = 0
+        done = 0
+        channels = [c for c in guild.text_channels
+                    if (c.permissions_for(guild.me) if guild.me else None)
+                    and c.permissions_for(guild.me).read_message_history]
+        n_total = len(channels)
+        try:
+            for ch in channels:
+                r = await self._backfill_channel(ch, interaction.user, limit=limit)
+                if r.startswith("✅"):
+                    ok += 1
+                    try:
+                        total += int(r.split("nạp ", 1)[1].split(" tin", 1)[0])
+                    except Exception:
+                        pass
+                done += 1
+                # Báo tiến độ live mỗi kênh (edit lại tin nhắn đầu)
+                try:
+                    await progress_msg.edit(
+                        content=f"🔄 Đang nạp... **{done}/{n_total}** kênh | "
+                                f"✅ {ok} kênh, {total} tin | vừa xong: {ch.mention}")
+                except discord.errors.NotFound:
+                    pass  # tin nhắn gốc bị xóa thì thôi, vẫn tiếp tục
+                await asyncio.sleep(1.0)  # throttle giữa các kênh
+        except Exception as e:
+            print(f"[backfill] Lỗi giữa chừng: {e}")
+        finally:
+            # Luôn báo kết quả cuối, dù lỗi hay token hết hạn
+            await _final(
+                f"🎉 Nạp xong: **{ok}/{n_total}** kênh thành công, tổng **{total}** tin nhắn.")
 
     @aimodel_group.command(name="balance", description="Kiểm tra số dư Credit và trạng thái giới hạn API của AI")
     async def aimodel_balance(self, interaction: discord.Interaction):
