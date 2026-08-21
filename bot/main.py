@@ -64,8 +64,13 @@ class TNCChatbot(commands.Bot):
 
         guild = discord.Object(id=GUILD_ID)
         self.tree.copy_global_to(guild=guild)
-        synced = await self.tree.sync(guild=guild)
-        print(f"✅ Đã sync {len(synced)} slash commands vào guild!")
+        try:
+            synced = await self.tree.sync(guild=guild)
+            print(f"✅ Đã sync {len(synced)} slash commands vào guild!")
+        except Exception as e:
+            # Sync fail (thường do rate-limit khi deploy liên tục) không được
+            # giết bot — lệnh cũ trong guild vẫn hoạt động.
+            print(f"⚠️ Sync slash commands thất bại (bot vẫn chạy): {e}")
 
         # Bật heartbeat đập tim lên Supabase
         start_heartbeat(self)
@@ -137,4 +142,16 @@ async def on_ready():
 
 if __name__ == "__main__":
     keep_alive(bot)
-    bot.run(TOKEN)
+    try:
+        bot.run(TOKEN)
+    except BaseException as e:
+        print(f"❌ [FATAL] bot.run() thất bại: {e!r}")
+        traceback.print_exc()
+        # BẮT BUỘC hard-exit: thread Flask non-daemon sẽ giữ process sống
+        # thành zombie (/health vẫn 200) → Render thấy healthy và KHÔNG BAO GIỜ
+        # restart dù bot đã chết từ lâu. Exit code != 0 buộc Render restart.
+        os._exit(1)
+    # bot.run() trả về bình thường (shutdown sạch) cũng phải thoát,
+    # tránh trở thành zombie như trên.
+    print("👋 bot.run() đã kết thúc — thoát process để Render restart sạch.")
+    os._exit(0)
