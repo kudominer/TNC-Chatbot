@@ -1,6 +1,8 @@
+import asyncio
 import discord
 from discord.ext import commands, tasks
 from core.database import execute
+from core.config import GUILD_ID
 import datetime
 
 class ChatLogger(commands.Cog):
@@ -74,8 +76,9 @@ class ChatLogger(commands.Cog):
 
     async def _insert_log(self, data):
         try:
-            # Insert log âm thầm
-            _, err = execute(lambda c: c.table("chat_history").insert(data))
+            # Upsert log âm thầm (dùng id làm khóa — chống trùng khi backfill + realtime)
+            _, err = execute(lambda c: c.table("chat_history").upsert(
+                data, on_conflict="id"))
             if err:
                 pass  # Bỏ qua lỗi ngầm để tránh spam console khi DB lỗi
         except Exception:
@@ -100,6 +103,87 @@ class ChatLogger(commands.Cog):
     @cleanup_old_messages.before_loop
     async def before_cleanup(self):
         await self.bot.wait_until_ready()
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        """Tự động nạp lịch sử các kênh 1 lần khi bot sẵn sàng (hướng B)."""
+        if getattr(self, "_backfilled", False):
+            return
+        self._backfilled = True
+        guild = self.bot.get_guild(GUILD_ID) or (
+            self.bot.guilds[0] if self.bot.guilds else None)
+        if not guild:
+            print("⚠️ [backfill] Không tìm thấy guild để nạp lịch sử.")
+            return
+        self.bot.loop.create_task(self._backfill_guild_history(guild))
+
+    async def _backfill_guild_history(self, guild):
+        """Quét lịch sử các kênh text bot đọc được, upsert vào chat_history.
+
+        Chạy 1 lần mỗi phiên. Upsert theo id nên chạy lại vẫn an toàn (không trùng).
+        Giới hạn 1000 tin/kênh + throttle 1s để tránh 429. Đồng thời upsert
+        discord_channels để bot nhận diện được tên kênh khi tóm tắt.
+        """
+        print("🔄 [backfill] Bắt đầu nạp lịch sử các kênh...")
+        total = 0
+        chan_ok = 0
+        try:
+            for channel in guild.text_channels:
+                perms = channel.permissions_for(guild.me) if guild.me else None
+                if not perms or not perms.read_message_history:
+                    continue
+                # Đảm bảo channel có mặt trong discord_channels (nhận diện tên kênh)
+                _, e2 = execute(lambda c: c.table("discord_channels").upsert({
+                    "id": str(channel.id),
+                    "guild_id": str(guild.id),
+                    "name": getattr(channel, "name", "unknown"),
+                    "type": str(getattr(channel, "type", "text")),
+                }, on_conflict="id"))
+                if e2:
+                    print(f"[backfill] Lỗi upsert discord_channels {channel.name}: {e2}")
+                try:
+                    rows = []
+                    async for msg in channel.history(limit=1000, oldest_first=False):
+                        if msg.author.bot:
+                            continue
+                        if not msg.content or not msg.content.strip():
+                            continue
+                        if msg.content.startswith(("/", ".", "!")):
+                            continue
+                        rows.append({
+                            "id": str(msg.id),
+                            "user_id": str(msg.author.id),
+                            "author_name": msg.author.display_name,
+                            "channel_id": str(channel.id),
+                            "channel_name": getattr(channel, "name", "unknown"),
+                            "content": msg.content,
+                            "created_at": msg.created_at.isoformat(),
+                        })
+                    if rows:
+                        BATCH = 500
+                        for i in range(0, len(rows), BATCH):
+                            _, err = execute(
+                                lambda c, b=rows[i:i+BATCH]: c.table("chat_history")
+                                .upsert(b, on_conflict="id"))
+                            if err:
+                                print(f"[backfill] Lỗi upsert {channel.name}: {err}")
+                        total += len(rows)
+                        chan_ok += 1
+                        print(f"[backfill] ✅ {channel.name}: {len(rows)} tin")
+                    await asyncio.sleep(1.0)  # throttle giữa các kênh
+                except discord.errors.Forbidden:
+                    continue
+                except discord.errors.HTTPException as e:
+                    if "429" in str(e):
+                        print(f"[backfill] Rate limit kênh {channel.name}, nghỉ 5s...")
+                        await asyncio.sleep(5)
+                        continue
+                    print(f"[backfill] Lỗi HTTP {channel.name}: {e}")
+                except Exception as e:
+                    print(f"[backfill] Lỗi {channel.name}: {e}")
+            print(f"🎉 [backfill] Xong: {chan_ok} kênh, {total} tin nhắn.")
+        except Exception as e:
+            print(f"❌ [backfill] Lỗi tổng: {e}")
 
 async def setup(bot):
     await bot.add_cog(ChatLogger(bot))

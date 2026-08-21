@@ -165,6 +165,46 @@ class ChatAI(commands.Cog):
     aichat_group = app_commands.Group(name="aichat", description="Quản lý Hành vi Chat của Bot")
     ailibrary_group = app_commands.Group(name="ailibrary", description="Quản lý Thư viện Kiến thức")
 
+    @app_commands.command(name="backfill", description="Nạp lịch sử tin nhắn 1 kênh (hoặc mọi kênh) vào DB để bot có thể tóm tắt")
+    @app_commands.describe(
+        channel="Kênh cần nạp (để trống = nạp TẤT CẢ kênh bot đọc được)",
+        limit="Số tin nhắn tối đa nạp mỗi kênh (mặc định 1000)",
+    )
+    @app_commands.default_permissions(manage_guild=True)
+    async def backfill(self, interaction: discord.Interaction, channel: discord.TextChannel = None, limit: int = 1000):
+        if not is_officer(interaction.user):
+            await interaction.response.send_message("❌ Chỉ Ban quản trị mới được dùng lệnh này.", ephemeral=True)
+            return
+        await interaction.response.defer(thinking=True, ephemeral=True)
+        if channel is not None:
+            result = await self._backfill_channel(channel, interaction.user, limit=limit)
+            await interaction.followup.send(result, ephemeral=True)
+            return
+        # Nạp mọi kênh đọc được trong guild
+        guild = interaction.guild
+        if not guild:
+            await interaction.followup.send("❌ Lệnh này chỉ dùng trong server.", ephemeral=True)
+            return
+        summary = [f"🔄 Đang nạp lịch sử **tất cả kênh** (giới hạn {limit} tin/kênh)..."]
+        await interaction.followup.send("\n".join(summary), ephemeral=True)
+        total = 0
+        ok = 0
+        for ch in guild.text_channels:
+            perms = ch.permissions_for(guild.me) if guild.me else None
+            if not perms or not perms.read_message_history:
+                continue
+            r = await self._backfill_channel(ch, interaction.user, limit=limit)
+            if r.startswith("✅"):
+                ok += 1
+                # đếm số tin từ chuỗi "Đã nạp N tin nhắn"
+                try:
+                    total += int(r.split("nạp ", 1)[1].split(" tin", 1)[0])
+                except Exception:
+                    pass
+            await asyncio.sleep(1.0)  # throttle giữa các kênh
+        await interaction.followup.send(
+            f"🎉 Nạp xong: {ok} kênh, tổng {total} tin nhắn.", ephemeral=True)
+
     @aimodel_group.command(name="balance", description="Kiểm tra số dư Credit và trạng thái giới hạn API của AI")
     async def aimodel_balance(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
@@ -700,6 +740,57 @@ class ChatAI(commands.Cog):
         except Exception as e:
             print(f"[summary] Lỗi truy vấn chat_history: {e}")
             return "(Không thể lấy dữ liệu lịch sử kênh lúc này.)"
+
+    # ── BACKFILL: nạp lịch sử 1 kênh vào chat_history (để tóm tắt sau) ──
+    async def _backfill_channel(self, channel, user, limit: int = 1000) -> str:
+        """Quét channel.history() và upsert vào bảng chat_history.
+
+        Chạy đồng bộ qua execute(); với limit mặc định 1000 tin nhắn có thể mất
+        vài chục giây trên kênh đầy — gọi giả làm trong interaction response.
+        """
+        from core.database import execute as _exec
+        try:
+            perms = channel.permissions_for(channel.guild.me) if channel.guild else None
+            if perms and not perms.read_message_history:
+                return f"❌ Bot không có quyền đọc lịch sử kênh {channel.mention}."
+            rows = []
+            async for msg in channel.history(limit=limit, oldest_first=False):
+                if msg.author.bot:
+                    continue
+                if not msg.content or not msg.content.strip():
+                    continue
+                if msg.content.startswith(("/", ".", "!")):
+                    continue
+                rows.append({
+                    "id": str(msg.id),
+                    "user_id": str(msg.author.id),
+                    "author_name": msg.author.display_name,
+                    "channel_id": str(channel.id),
+                    "channel_name": getattr(channel, "name", "unknown"),
+                    "content": msg.content,
+                    "created_at": msg.created_at.isoformat(),
+                })
+            if not rows:
+                return f"ℹ️ Không có tin nhắn nào để nạp từ {channel.mention}."
+            BATCH = 500
+            inserted = 0
+            for i in range(0, len(rows), BATCH):
+                _, err = _exec(lambda c, b=rows[i:i+BATCH]: c.table("chat_history")
+                               .upsert(b, on_conflict="id"))
+                if err:
+                    return f"❌ Lỗi upsert chat_history: {err}"
+                inserted += len(b)
+            return (f"✅ Đã nạp {inserted} tin nhắn từ {channel.mention} vào cơ sở dữ liệu. "
+                    f"Giờ bạn có thể gõ 'tóm tắt kênh {channel.name}'.")
+        except discord.errors.Forbidden:
+            return f"❌ Bot bị cấm đọc kênh {channel.mention}."
+        except discord.errors.HTTPException as e:
+            if "429" in str(e):
+                return "❌ Bị rate-limit (429) từ Discord. Thử lại sau vài phút."
+            return f"❌ Lỗi Discord: {e}"
+        except Exception as e:
+            print(f"[backfill] Lỗi: {e}")
+            return f"❌ Lỗi không xác định: {e}"
 
     # ── HELPERS: TỐI ƯU TOKEN / RATE-LIMIT / TỐC ĐỘ (A1, D1-D4, C) ──────────
     import json as _json
