@@ -109,6 +109,15 @@ class ChatAI(commands.Cog):
         if not force and getattr(self, "_config_loaded_ts", 0.0) + _CONFIG_RELOAD_TTL > now:
             return
         self._config_loaded_ts = now
+        self._load_config_sync()
+
+    def _load_config_sync(self):
+        """Phần nặng của _reload_config — CHỈ gọi qua asyncio.to_thread.
+
+        Gọi trực tiếp trên event loop là nguyên nhân bot ngưng rep giữa chừng:
+        request Supabase đồng bộ chậm sẽ block toàn bộ bot (kể cả heartbeat,
+        watchdog cũ). Luôn dùng _reload_config_async().
+        """
         self.ai_config = {
             "channel_buffers": {}, 
             "intercept_channels": [], 
@@ -143,6 +152,15 @@ class ChatAI(commands.Cog):
             print("⚠️ WARNING: Chưa cấu hình API Key nào (OpenRouter/Gemini/Ollama). Tính năng AI sẽ không hoạt động.")
             self.system_instruction = None
 
+    async def _reload_config_async(self, force: bool = True):
+        """Wrapper async của _reload_config — chạy phần nặng ở thread riêng
+        để không block event loop. Dùng cho mọi caller async (on_message, lệnh)."""
+        now = time.time()
+        if not force and getattr(self, "_config_loaded_ts", 0.0) + _CONFIG_RELOAD_TTL > now:
+            return
+        self._config_loaded_ts = now
+        await asyncio.to_thread(self._load_config_sync)
+
     aimodel_group = app_commands.Group(name="aimodel", description="Quản lý Model AI")
     aichat_group = app_commands.Group(name="aichat", description="Quản lý Hành vi Chat của Bot")
     ailibrary_group = app_commands.Group(name="ailibrary", description="Quản lý Thư viện Kiến thức")
@@ -150,7 +168,7 @@ class ChatAI(commands.Cog):
     @aimodel_group.command(name="balance", description="Kiểm tra số dư Credit và trạng thái giới hạn API của AI")
     async def aimodel_balance(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
-        self._reload_config()
+        await self._reload_config_async()
         if not self.api_key:
             await interaction.followup.send("❌ Bot chưa được cấu hình API Key cho OpenRouter.")
             return
@@ -206,7 +224,7 @@ class ChatAI(commands.Cog):
     @aichat_group.command(name="buffer", description="Chỉnh số tin nhắn bot lưu đệm ở kênh hiện tại")
     @app_commands.describe(size="Số lượng tin nhắn (Mặc định 20, khuyên dùng <= 50 để tiết kiệm token)")
     async def aimodel_buffer(self, interaction: discord.Interaction, size: int):
-        self._reload_config()
+        await self._reload_config_async()
         if not is_officer(interaction.user):
             await interaction.response.send_message("❌ Xin lỗi, chỉ Ban quản trị mới được quyền chỉnh!", ephemeral=True)
             return
@@ -231,7 +249,7 @@ class ChatAI(commands.Cog):
         app_commands.Choice(name="Tắt (Off)", value="off")
     ])
     async def aimodel_intercept(self, interaction: discord.Interaction, state: str):
-        self._reload_config()
+        await self._reload_config_async()
         if not is_officer(interaction.user):
             await interaction.response.send_message("❌ Xin lỗi, chỉ Ban quản trị mới được quyền chỉnh!", ephemeral=True)
             return
@@ -431,7 +449,7 @@ class ChatAI(commands.Cog):
         app_commands.Choice(name="Tắt (Off)", value="off")
     ])
     async def aimodel_vision(self, interaction: discord.Interaction, state: str):
-        self._reload_config()
+        await self._reload_config_async()
         if not is_officer(interaction.user):
             await interaction.response.send_message("❌ Xin lỗi, chỉ Ban quản trị mới được quyền chỉnh!", ephemeral=True)
             return
@@ -745,7 +763,7 @@ class ChatAI(commands.Cog):
             if not isinstance(data, dict):
                 data = {}
             data[key] = {"ts": _t.time(), "text": text}
-            save_json("tnc_summary_cache_v1", data)
+            save_json(data, "tnc_summary_cache_v1")
         except Exception as e:
             print(f"[summary-cache] Lỗi lưu cache: {e}")
 
@@ -932,7 +950,7 @@ class ChatAI(commands.Cog):
             
         is_random_intercept = False
         channel_id_str = str(message.channel.id)
-        self._reload_config(force=False)  # throttle: reload cấu hình tối đa mỗi 30s (chống GC/RAM trên Render)
+        await self._reload_config_async(force=False)  # throttle: reload cấu hình tối đa mỗi 30s (chống GC/RAM trên Render)
         
         if not (is_mentioned or is_reply or is_keyword_trigger):
             if channel_id_str in self.ai_config.get("intercept_channels", []):

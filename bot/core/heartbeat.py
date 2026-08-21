@@ -36,9 +36,11 @@ async def _heartbeat(bot) -> None:
                 "latency_ms": latency_ms,
                 "shard_id": getattr(bot, "shard_id", None),
             }
-            # Lưu vào json_storage (key = tnc_bot_status.json)
+            # Lưu vào json_storage (key = tnc_chatbot_status.json)
             # Dashboard sẽ đọc qua API /api/bot-status
-            save_json(payload, STATUS_FILE)
+            # Chạy ở thread riêng — request Supabase đồng bộ không được
+            # chặn event loop, nếu không bot sẽ ngưng rep khi mạng chậm.
+            await asyncio.to_thread(save_json, payload, STATUS_FILE)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Heartbeat lỗi: %s", exc)
         await asyncio.sleep(HEARTBEAT_INTERVAL)

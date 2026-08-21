@@ -1,7 +1,7 @@
 import os
 import sys
 import signal
-import asyncio
+import threading
 import traceback
 
 print(f"🚀 [STARTUP] bot/main.py loaded. Python {sys.version}")
@@ -44,6 +44,8 @@ EXTENSIONS = [
 
 
 class TNCChatbot(commands.Bot):
+    _watchdog_started: bool = False
+
     def __init__(self):
         intents = discord.Intents.all()
         super().__init__(command_prefix=["!", "."], intents=intents, help_command=None)
@@ -77,6 +79,8 @@ bot = TNCChatbot()
 # ==============================================================================
 GATEWAY_DEAD_THRESHOLD = 180  # giây
 
+_watchdog_stop = threading.Event()
+
 
 @bot.event
 async def on_disconnect():
@@ -88,21 +92,35 @@ async def on_resume():
     print("✅ [Watchdog] Đã kết nối lại gateway. Hủy đếm ngược.")
 
 
-async def _gateway_watchdog():
-    await bot.wait_until_ready()
-    while not bot.is_closed():
-        await asyncio.sleep(15)
-        if bot.is_closed():
-            break
-        if bot.latency == float("inf"):
-            if not hasattr(bot, "_dead_since"):
-                bot._dead_since = asyncio.get_event_loop().time()
-            dead_for = asyncio.get_event_loop().time() - bot._dead_since
-            if dead_for >= GATEWAY_DEAD_THRESHOLD:
-                print(f"🔥 [Watchdog] Gateway chết {dead_for:.0f}s — TỰ ĐỘNG RESTART!")
-                os.kill(os.getpid(), signal.SIGTERM)
-        else:
-            bot._dead_since = None
+def _gateway_watchdog_thread():
+    """Watchdog chạy ở OS thread RIÊNG — không phụ thuộc event loop.
+
+    Phiên bản cũ chạy trên event loop, nên khi loop bị block bởi lệnh
+    mạng đồng bộ treo (Supabase không timeout), chính watchdog cũng chết
+    theo → bot ngưng rep vĩnh viễn trong khi Flask vẫn trả lời 200.
+    Thread này đo "nhịp" của event loop qua callback call_soon_threadsafe:
+    nếu loop không xử lý callback trong GATEWAY_DEAD_THRESHOLD giây,
+    coi như loop đã treo → kill process để Render restart.
+    """
+    import time as _time
+
+    heartbeat_tick = {"t": None}
+
+    def _tick():
+        heartbeat_tick["t"] = _time.monotonic()
+
+    while not _watchdog_stop.is_set():
+        try:
+            bot.loop.call_soon_threadsafe(_tick)
+        except RuntimeError:
+            break  # loop đã đóng
+        _time.sleep(15)
+        last = heartbeat_tick["t"]
+        if last is not None and (_time.monotonic() - last) > GATEWAY_DEAD_THRESHOLD:
+            print(f"🔥 [Watchdog] Event loop treo quá {GATEWAY_DEAD_THRESHOLD}s "
+                  f"— TỰ ĐỘNG RESTART!")
+            os.kill(os.getpid(), signal.SIGTERM)
+            return
 
 
 @bot.event
@@ -110,8 +128,11 @@ async def on_ready():
     print(f"✅ Chatbot đã hoạt động: {bot.user} | ID: {bot.user.id}")
     bot_name = os.getenv("BOT_NAME", "NDZ")
     print(f"✅ {bot_name} Chatbot v1.0 [AI Chat + Wiki + Items + Learning] Online! Session: {BOT_SESSION_ID}")
-    # Khởi chạy watchdog sau khi bot sẵn sàng
-    bot.loop.create_task(_gateway_watchdog())
+    # Khởi chạy watchdog ở thread riêng (chỉ 1 lần)
+    if not getattr(bot, "_watchdog_started", False):
+        bot._watchdog_started = True
+        threading.Thread(target=_gateway_watchdog_thread,
+                         name="gateway-watchdog", daemon=True).start()
 
 
 if __name__ == "__main__":

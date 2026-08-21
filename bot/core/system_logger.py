@@ -68,10 +68,14 @@ class SystemLogger:
             cls.log_queue.clear()
 
             cls._is_consuming = True
-            
+
             try:
-                # Gửi theo mảng để tối ưu API call
-                _, err = execute(lambda c: c.table("system_logs").insert(batch))
+                # Gửi theo mảng để tối ưu API call.
+                # BẮT BUỘC chạy ở thread riêng: insert Supabase là lệnh đồng bộ,
+                # gọi trực tiếp trên event loop sẽ block toàn bộ bot khi mạng chậm
+                # (đây là nguyên nhân bot ngưng rep giữa chừng).
+                _, err = await asyncio.to_thread(
+                    execute, lambda c: c.table("system_logs").insert(batch))
                 if err:
                     # Không print ở đây để tránh infinite loop qua interceptor
                     pass

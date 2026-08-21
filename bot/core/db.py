@@ -19,9 +19,11 @@ from typing import Any, Callable, Optional, TypeVar
 
 try:
     from supabase import Client, create_client
+    from supabase.lib.client_options import ClientOptions
 except ImportError:
     Client = Any  # type: ignore
     create_client = None  # type: ignore
+    ClientOptions = None  # type: ignore
 
 from .config import SUPABASE_URL, SUPABASE_KEY
 
@@ -29,7 +31,7 @@ logger = logging.getLogger("bot.db")
 
 DEFAULT_RETRIES = 3
 DEFAULT_BACKOFF = 0.5  # giây, nhân đôi mỗi lần
-DEFAULT_TIMEOUT = 10.0  # giây
+DEFAULT_TIMEOUT = 10.0  # giây — BẮT BUỘC gắn vào client, nếu không request treo vô hạn
 
 T = TypeVar("T")
 
@@ -59,8 +61,20 @@ def get_client() -> Optional[Client]:
         return None
 
     try:
+        # QUAN TRỌNG: phải gắn timeout cho client. Không có timeout,
+        # 1 request Supabase bị treo sẽ block event loop vĩnh viễn
+        # → bot ngưng rep hoàn toàn nhưng process vẫn sống (Flask vẫn 200).
+        options = ClientOptions(
+            postgrest_client_timeout=DEFAULT_TIMEOUT,
+            storage_client_timeout=DEFAULT_TIMEOUT,
+        ) if ClientOptions else None
+        _client = (create_client(SUPABASE_URL, SUPABASE_KEY, options)
+                   if options else create_client(SUPABASE_URL, SUPABASE_KEY))
+        logger.info("Supabase client đã khởi tạo (service role, timeout=%ss).", DEFAULT_TIMEOUT)
+    except TypeError:
+        # Phiên bản supabase cũ không nhận options → fallback không timeout
+        logger.warning("supabase cũ không hỗ trợ options — khởi tạo không timeout.")
         _client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        logger.info("Supabase client đã khởi tạo (service role).")
     except Exception as exc:  # noqa: BLE001
         logger.exception("Không thể khởi tạo Supabase client: %s", exc)
         _client = None
