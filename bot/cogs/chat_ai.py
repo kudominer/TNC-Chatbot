@@ -801,8 +801,11 @@ class ChatAI(commands.Cog):
             BATCH = 500
             inserted = 0
             for i in range(0, len(rows), BATCH):
-                _, err = _exec(lambda c, b=rows[i:i+BATCH]: c.table("chat_history")
-                               .upsert(b, on_conflict="id"))
+                # Bọc execute trong to_thread để KHÔNG block event loop (tránh watchdog kill bot)
+                _, err = await asyncio.to_thread(
+                    _exec,
+                    lambda c, b=rows[i:i+BATCH]: c.table("chat_history")
+                    .upsert(b, on_conflict="id"))
                 if err:
                     return f"❌ Lỗi upsert chat_history: {err}"
                 inserted += len(b)

@@ -133,7 +133,9 @@ class ChatLogger(commands.Cog):
                 if not perms or not perms.read_message_history:
                     continue
                 # Đảm bảo channel có mặt trong discord_channels (nhận diện tên kênh)
-                _, e2 = execute(lambda c: c.table("discord_channels").upsert({
+                # QUAN TRỌNG: bọc execute() trong to_thread để KHÔNG block event loop
+                # (DB call đồng bộ gây treo loop → watchdog kill bot, như đã gặp).
+                _, e2 = await asyncio.to_thread(execute, lambda c: c.table("discord_channels").upsert({
                     "id": str(channel.id),
                     "guild_id": str(guild.id),
                     "name": getattr(channel, "name", "unknown"),
@@ -162,7 +164,8 @@ class ChatLogger(commands.Cog):
                     if rows:
                         BATCH = 500
                         for i in range(0, len(rows), BATCH):
-                            _, err = execute(
+                            _, err = await asyncio.to_thread(
+                                execute,
                                 lambda c, b=rows[i:i+BATCH]: c.table("chat_history")
                                 .upsert(b, on_conflict="id"))
                             if err:
